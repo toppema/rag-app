@@ -24,6 +24,13 @@ def handle_user_input(user_question):
             else:
                 with st.chat_message("assistant"):
                     st.write(message.content)
+                    
+        # Display source citations for the latest AI response
+        if 'source_documents' in response and response['source_documents']:
+            with st.expander("📚 View Source Documents"):
+                for idx, doc in enumerate(response['source_documents']):
+                    st.markdown(f"**Source {idx + 1}:**")
+                    st.caption(f"_{doc.page_content[:200]}..._")
     else:
         st.warning("Please upload and process a document first.")
 
@@ -31,9 +38,12 @@ def main():
     # Page configuration for a professional look
     st.set_page_config(page_title="DocuMind - AI Document Analyst", page_icon="📚", layout="wide")
     
-    # Custom CSS for styling
+    # Custom CSS for styling (including removing Streamlit branding)
     st.markdown("""
     <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
     .stButton>button {
         background-color: #4CAF50;
         color: white;
@@ -63,19 +73,27 @@ def main():
         if st.button("Process Document"):
             if uploaded_file is not None:
                 with st.spinner("Analyzing document..."):
-                    # 1. Process and chunk the document
                     chunks = process_document(uploaded_file)
-                    
-                    # 2. Create the vector store
                     vector_store = create_vector_store(chunks)
-                    
-                    # 3. Create the conversation chain
                     st.session_state.conversation = get_conversation_chain(vector_store)
-                    
                 st.success("Document processed successfully! You can now ask questions.")
             else:
                 st.error("Please upload a PDF document first.")
                 
+        st.divider()
+        st.subheader("Try it out!")
+        if st.button("Try Demo (My Resume)"):
+            if os.path.exists("resume.pdf"):
+                with st.spinner("Analyzing resume..."):
+                    # We open the local resume.pdf in binary mode to simulate an uploaded file
+                    with open("resume.pdf", "rb") as f:
+                        chunks = process_document(f)
+                    vector_store = create_vector_store(chunks)
+                    st.session_state.conversation = get_conversation_chain(vector_store)
+                st.success("Demo Resume processed! Ask me questions about my experience.")
+            else:
+                st.error("No 'resume.pdf' found in the folder. Please add it first!")
+
         st.divider()
         st.markdown("""
         **About this app:**
