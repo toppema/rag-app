@@ -34,9 +34,6 @@ def main():
     # Custom CSS for styling
     st.markdown("""
     <style>
-    .main {
-        background-color: #f8f9fa;
-    }
     .stButton>button {
         background-color: #4CAF50;
         color: white;
