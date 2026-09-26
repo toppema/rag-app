@@ -14,23 +14,23 @@ def handle_user_input(user_question):
     Passes the user's question to the conversation chain and displays the response.
     """
     if st.session_state.conversation:
-        response = st.session_state.conversation({'question': user_question})
-        st.session_state.chat_history = response['chat_history']
-        
-        for i, message in enumerate(st.session_state.chat_history):
-            if i % 2 == 0:
-                with st.chat_message("user"):
-                    st.write(message.content)
-            else:
-                with st.chat_message("assistant"):
-                    st.write(message.content)
+        # Display the user's question immediately
+        with st.chat_message("user"):
+            st.write(user_question)
+            
+        # Fetch and display the assistant's answer
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = st.session_state.conversation({'question': user_question})
+                st.session_state.chat_history = response['chat_history']
+                
+            st.write(response['chat_history'][-1].content)
                     
-        # Display source citations for the latest AI response
-        if 'source_documents' in response and response['source_documents']:
-            with st.expander("📚 View Source Documents"):
-                for idx, doc in enumerate(response['source_documents']):
-                    st.markdown(f"**Source {idx + 1}:**")
-                    st.caption(f"_{doc.page_content[:200]}..._")
+            # Display source citations for the latest AI response
+            if 'source_documents' in response and response['source_documents']:
+                with st.expander("📚 Click here to see the raw text pulled from the PDF"):
+                    for idx, doc in enumerate(response['source_documents']):
+                        st.info(f"**Chunk {idx + 1} from your PDF:**\n\n{doc.page_content[:300]}...")
     else:
         st.warning("Please upload and process a document first.")
 
@@ -58,6 +58,12 @@ def main():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
 
+    @st.cache_resource(show_spinner=False)
+    def load_demo_vector_store():
+        with open("resume.pdf", "rb") as f:
+            chunks = process_document(f)
+        return create_vector_store(chunks)
+
     # Main UI Header
     st.title("📚 DocuMind AI")
     st.markdown("### Your Intelligent Document Assistant")
@@ -84,11 +90,9 @@ def main():
         st.subheader("Try it out!")
         if st.button("Try Demo (My Resume)"):
             if os.path.exists("resume.pdf"):
-                with st.spinner("Analyzing resume..."):
-                    # We open the local resume.pdf in binary mode to simulate an uploaded file
-                    with open("resume.pdf", "rb") as f:
-                        chunks = process_document(f)
-                    vector_store = create_vector_store(chunks)
+                with st.spinner("Analyzing resume (from cache)..."):
+                    # We use the cached vector store so we don't hit the API limit!
+                    vector_store = load_demo_vector_store()
                     st.session_state.conversation = get_conversation_chain(vector_store)
                 st.success("Demo Resume processed! Ask me questions about my experience.")
             else:
@@ -102,6 +106,18 @@ def main():
 
     # Main Chat Interface
     st.subheader("Chat Interface")
+    
+    # Always display previous chat history first
+    if st.session_state.chat_history:
+        for i, message in enumerate(st.session_state.chat_history):
+            if i % 2 == 0:
+                with st.chat_message("user"):
+                    st.write(message.content)
+            else:
+                with st.chat_message("assistant"):
+                    st.write(message.content)
+
+    # Then accept new user input
     user_question = st.chat_input("Ask a question about your document...")
     if user_question:
         handle_user_input(user_question)
