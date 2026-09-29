@@ -74,7 +74,11 @@ def main():
     # Sidebar for uploading files
     with st.sidebar:
         st.subheader("Your Documents")
-        uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+        uploaded_file = st.file_uploader(
+            "Upload a PDF", 
+            type=["pdf"], 
+            help="Maximum file size is limited to 5MB to ensure fast processing and prevent API limits."
+        )
         
         if st.button("Process Document"):
             if uploaded_file is not None:
