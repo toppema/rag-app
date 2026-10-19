@@ -6,8 +6,11 @@ def create_vector_store(chunks):
     """
     Creates a Chroma vector store from document chunks using Google GenAI embeddings.
     """
-    # Use Google's embedding model
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-2")
+    # Use Google's embedding model (gemini-embedding-001 is supported on current API)
+    try:
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    except Exception:
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
     
     # Create the vector store
     # We store it in memory for now, but you can specify a persist_directory 

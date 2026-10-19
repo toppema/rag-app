@@ -14,23 +14,42 @@ def handle_user_input(user_question):
     Passes the user's question to the conversation chain and displays the response.
     """
     if st.session_state.conversation:
-        # Display the user's question immediately
+        # Append user message to UI state
+        st.session_state.messages.append({
+            "role": "user",
+            "content": user_question,
+            "sources": []
+        })
         with st.chat_message("user"):
             st.write(user_question)
             
         # Fetch and display the assistant's answer
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response = st.session_state.conversation({'question': user_question})
-                st.session_state.chat_history = response['chat_history']
+                try:
+                    response = st.session_state.conversation({'question': user_question})
+                    answer_content = response.get('answer', '')
+                    sources = response.get('source_documents', [])
+                except Exception as e:
+                    answer_content = f"⚠️ Could not generate an answer: {e}. Please try asking again."
+                    sources = []
                 
-            st.write(response['chat_history'][-1].content)
+            st.write(answer_content)
                     
-            # Display source citations for the latest AI response
-            if 'source_documents' in response and response['source_documents']:
-                with st.expander("📚 Click here to see the raw text pulled from the PDF"):
-                    for idx, doc in enumerate(response['source_documents']):
-                        st.info(f"**Chunk {idx + 1} from your PDF:**\n\n{doc.page_content[:300]}...")
+            # Display source citations for this AI response
+            if sources:
+                with st.expander("📚 Click here to see the raw text pulled from the document"):
+                    for idx, doc in enumerate(sources):
+                        st.info(f"**Chunk {idx + 1} from your document:**\n\n{doc.page_content[:300]}...")
+                        
+        # Append assistant response to UI state so it persists across reruns
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer_content,
+            "sources": sources
+        })
+        if st.session_state.conversation and hasattr(st.session_state.conversation, 'memory'):
+            st.session_state.chat_history = st.session_state.conversation.memory.buffer
     else:
         st.warning("Please upload and process a document first.")
 
@@ -38,16 +57,25 @@ def main():
     # Page configuration for a professional look
     st.set_page_config(page_title="DocuMind - AI Document Analyst", page_icon="📚", layout="wide")
     
-    # Custom CSS for styling (including removing Streamlit branding)
+    # Custom CSS for styling
     st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
     .stButton>button {
-        background-color: #4CAF50;
-        color: white;
-        border-radius: 5px;
+        border-radius: 6px;
+        font-weight: 500;
+    }
+    .doc-badge {
+        display: inline-block;
+        background-color: #1e293b;
+        color: #38bdf8;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        margin-bottom: 12px;
+        border: 1px solid #334155;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -57,6 +85,10 @@ def main():
         st.session_state.conversation = None
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "current_doc_name" not in st.session_state:
+        st.session_state.current_doc_name = None
 
     @st.cache_resource(show_spinner=False)
     def load_demo_vector_store():
@@ -75,53 +107,90 @@ def main():
     with st.sidebar:
         st.subheader("Your Documents")
         uploaded_file = st.file_uploader(
-            "Upload a PDF", 
-            type=["pdf"], 
-            help="Maximum file size is limited to 5MB to ensure fast processing and prevent API limits."
+            "Upload a Document", 
+            type=["pdf", "docx", "html", "htm"], 
+            help="Maximum file size is limited to 5MB to ensure fast processing."
         )
         
-        if st.button("Process Document"):
+        # Notice if user uploaded a different file than currently active
+        if uploaded_file is not None and st.session_state.current_doc_name and uploaded_file.name != st.session_state.current_doc_name:
+            st.info(f"🔄 New file selected: **{uploaded_file.name}**. Click **Process Document** to switch contexts.")
+        
+        if st.button("Process Document", type="primary", use_container_width=True):
             if uploaded_file is not None:
                 with st.spinner("Analyzing document..."):
                     chunks = process_document(uploaded_file)
                     vector_store = create_vector_store(chunks)
+                    # Initialize fresh conversation chain
                     st.session_state.conversation = get_conversation_chain(vector_store)
-                st.success("Document processed successfully! You can now ask questions.")
+                    # Reset conversation history for the new document
+                    st.session_state.chat_history = None
+                    st.session_state.messages = []
+                    st.session_state.current_doc_name = uploaded_file.name
+                st.success(f"Processed '{uploaded_file.name}'! Chat history reset.")
+                st.rerun()
             else:
-                st.error("Please upload a PDF document first.")
+                st.error("Please upload a document first.")
                 
         st.divider()
         st.subheader("Try it out!")
-        if st.button("Try Demo (My Resume)"):
+        if st.button("Try Demo (My Resume)", use_container_width=True):
             if os.path.exists("resume.pdf"):
                 with st.spinner("Analyzing resume (from cache)..."):
-                    # We use the cached vector store so we don't hit the API limit!
                     vector_store = load_demo_vector_store()
                     st.session_state.conversation = get_conversation_chain(vector_store)
-                st.success("Demo Resume processed! Ask me questions about my experience.")
+                    st.session_state.chat_history = None
+                    st.session_state.messages = []
+                    st.session_state.current_doc_name = "resume.pdf (Demo)"
+                st.success("Demo Resume processed! Chat history reset.")
+                st.rerun()
             else:
                 st.error("No 'resume.pdf' found in the folder. Please add it first!")
 
         st.divider()
+        # Reset / Clear Chat Button
+        if st.session_state.messages:
+            if st.button("🗑️ Clear Chat History", use_container_width=True):
+                st.session_state.messages = []
+                st.session_state.chat_history = None
+                if st.session_state.conversation and hasattr(st.session_state.conversation, 'memory'):
+                    st.session_state.conversation.memory.clear()
+                st.rerun()
+
         st.markdown("""
         **About this app:**
         This is an end-to-end RAG (Retrieval-Augmented Generation) application built to demonstrate advanced NLP and Vector Search capabilities.
         """)
 
-    # Main Chat Interface
-    st.subheader("Chat Interface")
-    
-    # Always display previous chat history first
-    if st.session_state.chat_history:
-        for i, message in enumerate(st.session_state.chat_history):
-            if i % 2 == 0:
-                with st.chat_message("user"):
-                    st.write(message.content)
-            else:
-                with st.chat_message("assistant"):
-                    st.write(message.content)
+    # Main Chat Interface Header with Active Document Indicator and Clear Button
+    col_hdr, col_clear = st.columns([3, 1])
+    with col_hdr:
+        st.subheader("Chat Interface")
+    with col_clear:
+        if st.session_state.messages:
+            if st.button("🗑️ Clear Chat", key="clear_chat_top"):
+                st.session_state.messages = []
+                st.session_state.chat_history = None
+                if st.session_state.conversation and hasattr(st.session_state.conversation, 'memory'):
+                    st.session_state.conversation.memory.clear()
+                st.rerun()
 
-    # Then accept new user input
+    # Active Document status badge
+    if st.session_state.current_doc_name:
+        st.markdown(f"📄 **Active Document:** `{st.session_state.current_doc_name}`")
+    else:
+        st.info("👆 Please upload and click **Process Document** in the sidebar to start asking questions.")
+    
+    # Display persistent chat messages
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+            if msg.get("sources"):
+                with st.expander("📚 Click here to see the raw text pulled from the document"):
+                    for idx, doc in enumerate(msg["sources"]):
+                        st.info(f"**Chunk {idx + 1} from your document:**\n\n{doc.page_content[:300]}...")
+
+    # Accept new user input
     user_question = st.chat_input("Ask a question about your document...")
     if user_question:
         handle_user_input(user_question)
