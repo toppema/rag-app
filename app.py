@@ -8,6 +8,12 @@ from llm_chain import get_conversation_chain
 
 # Load environment variables (like GOOGLE_API_KEY)
 load_dotenv()
+if not os.getenv("GOOGLE_API_KEY"):
+    try:
+        if hasattr(st, "secrets") and "GOOGLE_API_KEY" in st.secrets:
+            os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+    except Exception:
+        pass
 
 def handle_user_input(user_question):
     """
