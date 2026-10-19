@@ -111,6 +111,19 @@ def main():
 
     # Sidebar for uploading files
     with st.sidebar:
+        # API Key status indicator
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            st.warning("⚠️ GOOGLE_API_KEY is not set.")
+            user_key = st.text_input("Enter Google API Key", type="password", help="Enter your Gemini API key to activate the app.")
+            if user_key:
+                os.environ["GOOGLE_API_KEY"] = user_key.strip()
+                st.success("API Key set!")
+                st.rerun()
+        else:
+            st.caption("🔑 API Key: **Connected** ✅")
+
+        st.divider()
         st.subheader("Your Documents")
         uploaded_file = st.file_uploader(
             "Upload a Document", 
@@ -202,9 +215,4 @@ def main():
         handle_user_input(user_question)
 
 if __name__ == '__main__':
-    # Ensure the user has provided an API key
-    if not os.getenv("GOOGLE_API_KEY"):
-        st.error("⚠️ GOOGLE_API_KEY is not set. Please set it in your environment variables or a .env file.")
-        st.stop()
-        
     main()
